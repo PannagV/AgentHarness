@@ -10,11 +10,13 @@ from datetime import datetime
 import json
 from pathlib import Path
 
-logDIR = Path("logs")
-logDIR.mkdir(exist_ok=True)
+chatDIR = Path("logs/chatlog")
+traceDIR = Path("logs/reasoning_trace")
+chatDIR.mkdir(exist_ok=True)
+traceDIR.mkdir(exist_ok=True)
 
-log_file = f"logs/chatlog_{datetime.now().strftime('%Y-%m-%d')}.json"
-resoning_trace = f"logs/reasoning_trace_{datetime.now().strftime('%Y-%m-%d')}.json"
+log_file = f"{chatDIR}/chatlog_{datetime.now().strftime('%Y-%m-%d')}.json"
+resoning_trace = f"{traceDIR}/reasoning_trace_{datetime.now().strftime('%Y-%m-%d')}.json"
 console = Console()
 messages = []
 reasoning_trace = []
@@ -29,8 +31,23 @@ class InputHandler():
             "/quit": self.exit_program,
             "/reset": self.reset_conversation,
             "/clear": self.reset_conversation,
+            #"/model": self.change_model,
+            "/id": self.show_conversation_id,
+            #"/history": self.show_history
         }
 
+    def show_conversation_id(self):
+        console.print(f'Current conversation ID: [cyan]{log_file}[/cyan]')
+    """
+    def show_history(self):
+        if messages:
+            console.print("[bold cyan]Conversation History:[/bold cyan]")
+            for msg in messages:
+                console.print(f'[{msg[0]["role"]}]: {msg[0]["content"]}')
+                
+        else:
+            console.print("[yellow]No conversation history available.[/yellow]")
+    """
     def help(self):
             console.print(""" 
             Available commands:
@@ -38,7 +55,7 @@ class InputHandler():
             /help , /h - Show this help message
             /exit , /quit - Exit the program
             /reset - Reset the conversation
-            /model - Change the model
+            /model - Change the model (Under Progress)
             /id - Show the current conversation ID
             /history - Show the conversation history
             /clear - Clear the conversation history
@@ -71,8 +88,6 @@ class InputHandler():
             self.commands[command]()
             pass 
         else:
-            # Handle regular input (not a command)
-            messages.append({"role": "user", "content": user_input})
 
             answer = ""
             status = ThreeDots()
@@ -95,7 +110,7 @@ class InputHandler():
 
                 for event in stream:
                     if event.type == "response.reasoning_text.delta":
-                        reasoning_trace.append(event.delta)
+                        reasoning_trace.append([event.delta])
                     if event.type == "response.output_text.delta":
                         answer += event.delta
                         response_panel = Panel(Markdown(answer), border_style="green")
@@ -103,10 +118,13 @@ class InputHandler():
 
                 live.update(response_panel)
 
-            messages.append({
+            messages.append([{
+                "role": "user",
+                "content": user_input
+            }, {    
                 "role": "assistant",
                 "content": answer
-            })
+            }])
 
             print()
 
