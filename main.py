@@ -1,22 +1,18 @@
-from openai import OpenAI
-from rich.console import Console
-from rich.markdown import Markdown
-from rich.panel import Panel
-from rich.prompt import Prompt
-from rich.live import Live
-from rich.text import Text
+import asyncio
 import time
 
+from openai import AsyncOpenAI
+from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
+
 DEFAULT_BASE_URL = "http://localhost:1234/v1"
-client = None
+DEFAULT_MODEL_NAME = "nvidia/nemotron-3-nano-4b"
+
+console = Console(color_system="auto")
 
 
-console = Console(
-    color_system="auto"
-)
-
-
-def show_welcome(model_name):
+def show_welcome(model_name: str) -> None:
     console.print(
         Panel.fit(
             f"[green]{model_name}[/green]\n"
@@ -33,32 +29,55 @@ class ThreeDots:
         dots = Text()
 
         for index in range(3):
-            dots.append(".", style="bold white" if index == active_dot else "dim white")
+            dots.append(
+                ".",
+                style="bold white" if index == active_dot else "dim white",
+            )
             if index < 2:
                 dots.append("")
 
         yield dots
 
-if __name__ == "__main__":
+
+async def run() -> None:
     from config import InputHandler
+    from input_ui import MultilineInput
+    from logger import ChatLogger
 
-    MODEL_NAME = console.input('[bold] Enter Model Name: ') or "nvidia/nemotron-3-nano-4b"
-    BASE_URL = Prompt.ask(
-        "[bold] Base URL",
-        default=DEFAULT_BASE_URL,
-        show_default=True,
-    )
+    model_name = console.input(
+        f"[bold] Enter Model Name [{DEFAULT_MODEL_NAME}]: "
+    ).strip() or DEFAULT_MODEL_NAME
+    base_url = console.input(
+        f"[bold] Enter Base URL [{DEFAULT_BASE_URL}]: "
+    ).strip() or DEFAULT_BASE_URL
 
-    client = OpenAI(
-        base_url=BASE_URL,
+    client = AsyncOpenAI(
+        base_url=base_url,
         api_key="lm-studio",
     )
+    logger = ChatLogger(model_name=model_name, base_url=base_url)
+    input_session = MultilineInput()
+    input_handler = InputHandler(client, ThreeDots, model_name, logger)
 
-    show_welcome(MODEL_NAME)
-    input_handler = InputHandler(client, ThreeDots)
+    show_welcome(model_name)
 
-    # Handling input command options
     while True:
-        
-        USER_INPUT = Prompt.ask("\n[italic]User > [/italic]")
-        input_handler.handle_input(USER_INPUT, MODEL_NAME)    
+        try:
+            result = await input_session.prompt()
+        except (EOFError, KeyboardInterrupt):
+            input_handler.exit_program()
+            return
+
+        if result.exited:
+            input_handler.exit_program()
+        if result.cancelled:
+            console.print("[yellow]Input cancelled.[/yellow]")
+            continue
+        if not result.text.strip():
+            continue
+
+        await input_handler.handle_input(result.text)
+
+
+if __name__ == "__main__":
+    asyncio.run(run())
