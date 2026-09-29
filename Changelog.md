@@ -2,6 +2,33 @@
 
 This file records the changes made during the current implementation session.
 
+## 2026-09-29 — Icebreaker rename, skills, and global CLI
+
+- Renamed the project distribution from `agentharness` to `icebreaker`.
+- Added the `icebreaker` console command through `cli.py` and `pyproject.toml`.
+- Preserved `python main.py` for local development.
+- Added setuptools packaging metadata for the flat Python module layout.
+- Documented editable `pipx` installation so the command can run from any folder
+  without manually activating a virtual environment.
+- Added `ICEBREAKER_SKILLS_DIR` to override the skills directory.
+- Added `ICEBREAKER_LOG_DIR` to override the log directory.
+- Added `skills_manager.py` for discovering and validating `skills/*/SKILL.md`.
+- Added YAML front matter parsing through `pyyaml`.
+- Added explicit skill commands:
+  - `/skills`
+  - `/skill`
+  - `/skill <name>`
+  - `/skill clear`
+- Injected active skill instructions through the Responses API `instructions`
+  field without mixing them into user input.
+- Added skill activation and clearing lifecycle events to JSONL logs.
+- Added active skill names to exchange and interruption records.
+- Added safe skill resource path validation.
+- Added regression tests for skill discovery, malformed skills, multiline YAML,
+  and path traversal protection.
+- Updated `README.md`, `Agents.md`, `pyproject.toml`, `requirements.txt`, and
+  `uv.lock` for the new project name and runtime behavior.
+
 ## 2026-09-29 — Initial codebase exploration
 
 - Inspected the repository structure and identified the Python CLI layout.

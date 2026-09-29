@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -17,7 +18,14 @@ class ChatLogger:
         base_url: str | None = None,
         log_reasoning: bool = True,
     ) -> None:
-        root = Path(log_dir) if log_dir is not None else Path(__file__).parent / "logs"
+        configured_log_dir = os.environ.get("ICEBREAKER_LOG_DIR")
+        root = (
+            Path(log_dir)
+            if log_dir is not None
+            else Path(configured_log_dir).expanduser()
+            if configured_log_dir
+            else Path(__file__).parent / "logs"
+        )
         self.chat_dir = root / "chatlog"
         self.reasoning_dir = root / "reasoning_trace"
         self.chat_dir.mkdir(parents=True, exist_ok=True)
@@ -73,6 +81,7 @@ class ChatLogger:
         model_name: str,
         reasoning: list[str] | None = None,
         status: str = "completed",
+        skill_name: str | None = None,
     ) -> None:
         self.model_name = model_name
         record = self._metadata("exchange")
@@ -83,6 +92,8 @@ class ChatLogger:
                 "status": status,
             }
         )
+        if skill_name:
+            record["skill"] = skill_name
         self._append_record(self._path_for_today(self.chat_dir, "chatlog"), record)
         self._log_reasoning(reasoning, "reasoning")
 
@@ -92,6 +103,7 @@ class ChatLogger:
         assistant_response: str,
         model_name: str,
         reasoning: list[str] | None = None,
+        skill_name: str | None = None,
     ) -> None:
         self.model_name = model_name
         record = self._metadata("interrupted")
@@ -102,6 +114,8 @@ class ChatLogger:
                 "status": "interrupted",
             }
         )
+        if skill_name:
+            record["skill"] = skill_name
         self._append_record(self._path_for_today(self.chat_dir, "chatlog"), record)
         self._log_reasoning(reasoning, "reasoning_interrupted")
 

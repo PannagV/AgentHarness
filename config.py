@@ -3,6 +3,7 @@ import contextlib
 import inspect
 import os
 import sys
+from pathlib import Path
 from typing import Any
 
 from rich.console import Console, Group
@@ -12,6 +13,7 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 
 from logger import ChatLogger
+from skills_manager import Skill, SkillsManager
 
 
 console = Console()
@@ -24,11 +26,16 @@ class InputHandler:
         dots_renderer: type,
         model_name: str,
         logger: ChatLogger,
+        skills_manager: SkillsManager | None = None,
     ) -> None:
         self.client = client
         self.dots_renderer = dots_renderer
         self.model_name = model_name
         self.logger = logger
+        self.skills_manager = skills_manager or SkillsManager(
+            Path(__file__).parent / "skills"
+        )
+        self.active_skill: Skill | None = None
         self.messages: list[dict[str, str]] = []
         self.reasoning_trace: list[str] = []
         self.commands = {
@@ -42,7 +49,54 @@ class InputHandler:
             "/reset": self.reset_conversation,
             "/clear": self.reset_conversation,
             "/id": self.show_conversation_id,
+            "/skills": self.list_skills,
+            "/list-skills": self.list_skills,
         }
+
+    def list_skills(self) -> None:
+        skills = self.skills_manager.list_skills()
+        if not skills:
+            console.print("[yellow]No valid skills discovered.[/yellow]")
+            return
+
+        console.print("[bold cyan]Available skills[/bold cyan]\n")
+        for skill in skills:
+            console.print(
+                f"- [cyan]{skill.metadata.name}[/cyan] — "
+                f"{skill.metadata.description}\n\n"
+            )
+        if self.skills_manager.errors:
+            console.print(
+                f"[yellow]{len(self.skills_manager.errors)} skill(s) skipped "
+                "because they are invalid.[/yellow]"
+            )
+
+    def select_skill(self, argument: str = "") -> None:
+        argument = argument.strip()
+        if not argument:
+            if self.active_skill is None:
+                console.print("[yellow]No active skill.[/yellow]")
+            else:
+                console.print(
+                    f"Active skill: [cyan]{self.active_skill.metadata.name}[/cyan]"
+                )
+            return
+
+        if argument.casefold() == "clear":
+            previous = self.active_skill.metadata.name if self.active_skill else None
+            self.active_skill = None
+            self.logger.log_event("skill_cleared", previous_skill=previous)
+            console.print("[green]Active skill cleared.[/green]")
+            return
+
+        skill = self.skills_manager.get(argument)
+        if skill is None:
+            console.print(f"[red]Unknown skill:[/red] {argument}")
+            return
+
+        self.active_skill = skill
+        self.logger.log_event("skill_activated", skill=skill.metadata.name)
+        console.print(f"[green]Using skill:[/green] {skill.metadata.name}")
 
     def show_conversation_id(self) -> None:
         console.print(
@@ -112,6 +166,10 @@ Available commands:
 /history        Show the current conversation history
 /reset, /clear  Clear the current conversation
 /id             Show the current conversation ID
+/skills         List available skills
+/skill          Show the active skill
+/skill <name>   Activate a skill
+/skill clear    Clear the active skill
 /exit, /quit    Exit the program
 
 Multiline input:
@@ -170,11 +228,16 @@ Ctrl+Q           Cancel input or interrupt generation
                 refresh_per_second=10,
             ) as live:
                 try:
-                    stream = await self.client.responses.create(
-                        model=self.model_name,
-                        input=user_input,
-                        stream=True,
-                    )
+                    request: dict[str, Any] = {
+                        "model": self.model_name,
+                        "input": user_input,
+                        "stream": True,
+                    }
+                    if self.active_skill is not None:
+                        request["instructions"] = self.skills_manager.format_instructions(
+                            self.active_skill
+                        )
+                    stream = await self.client.responses.create(**request)
                 except Exception as error:
                     self.logger.log_error(user_input, str(error), self.model_name)
                     live.update(
@@ -227,6 +290,9 @@ Ctrl+Q           Cancel input or interrupt generation
         if command in self.commands:
             self.commands[command]()
             return
+        if command == "/skill" or command.startswith("/skill "):
+            self.select_skill(user_input.strip()[len("/skill") :])
+            return
 
         self.reasoning_trace.clear()
         answer, reasoning, status = await self._generate_response(user_input)
@@ -250,6 +316,7 @@ Ctrl+Q           Cancel input or interrupt generation
                 answer,
                 self.model_name,
                 reasoning,
+                self.active_skill.metadata.name if self.active_skill else None,
             )
             console.print("[yellow]Generation interrupted.[/yellow]")
         else:
@@ -258,6 +325,7 @@ Ctrl+Q           Cancel input or interrupt generation
                 answer,
                 self.model_name,
                 reasoning,
+                skill_name=self.active_skill.metadata.name if self.active_skill else None,
             )
         self.reasoning_trace.clear()
         print()

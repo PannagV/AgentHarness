@@ -1,5 +1,7 @@
 import asyncio
+import os
 import time
+from pathlib import Path
 
 from openai import AsyncOpenAI
 from rich.console import Console
@@ -43,6 +45,7 @@ async def run() -> None:
     from config import InputHandler
     from input_ui import MultilineInput
     from logger import ChatLogger
+    from skills_manager import SkillsManager
 
     model_name = console.input(
         f"[bold] Enter Model Name [{DEFAULT_MODEL_NAME}]: "
@@ -56,8 +59,14 @@ async def run() -> None:
         api_key="lm-studio",
     )
     logger = ChatLogger(model_name=model_name, base_url=base_url)
+    skills_directory = Path(
+        os.environ.get("ICEBREAKER_SKILLS_DIR", Path(__file__).parent / "skills")
+    ).expanduser()
+    skills_manager = SkillsManager(skills_directory)
     input_session = MultilineInput()
-    input_handler = InputHandler(client, ThreeDots, model_name, logger)
+    input_handler = InputHandler(
+        client, ThreeDots, model_name, logger, skills_manager
+    )
 
     show_welcome(model_name)
 

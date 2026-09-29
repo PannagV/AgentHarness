@@ -1,11 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "agentharness"
+name = "icebreaker"
 version = "0.1.0"
-description = "Add your description here"
+description = "A terminal harness for local OpenAI-compatible models"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "openai>=3.20.0",
     "prompt-toolkit>=3.0.53",
+    "pyyaml>=6.0",
     "rich>=15.0.0",
+]
+
+[project.scripts]
+icebreaker = "cli:main"
+
+[tool.setuptools]
+py-modules = [
+    "cli",
+    "main",
+    "config",
+    "input_ui",
+    "logger",
+    "skills_manager",
 ]

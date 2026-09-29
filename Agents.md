@@ -1,8 +1,8 @@
-# AgentHarness Project Guide
+# Icebreaker Project Guide
 
 ## Overview
 
-AgentHarness is a Python terminal application for interacting with local OpenAI-compatible language model servers. It provides a Rich-based terminal UI, streaming responses, runtime model selection, multiline prompt input, cancellable generation, conversation history, and append-only JSONL logging.
+Icebreaker is a Python terminal application for interacting with local OpenAI-compatible language model servers. It provides a Rich-based terminal UI, streaming responses, runtime model selection, multiline prompt input, cancellable generation, conversation history, and append-only JSONL logging.
 
 The default backend is intended to be a local server such as LM Studio:
 
@@ -15,13 +15,17 @@ The application does not currently provide a web UI, remote authentication, mode
 ## Repository layout
 
 ```text
-AgentHarness/
-├── agents.md
-├── chanelog.md
+Icebreaker/
+├── Agents.md
+├── Changelog.md
 ├── config.py
 ├── input_ui.py
 ├── logger.py
 ├── main.py
+├── cli.py
+├── skills_manager.py
+├── skills/
+│   └── <skill-name>/SKILL.md
 ├── requirements.txt
 ├── README.md
 ├── LICENSE
@@ -40,6 +44,7 @@ The application expects:
 - `openai` for OpenAI-compatible synchronous/asynchronous client APIs
 - `rich` for terminal formatting and live response rendering
 - `prompt-toolkit` for multiline editing and keyboard bindings
+- `pyyaml` for parsing skill front matter
 
 Install them with:
 
@@ -47,7 +52,11 @@ Install them with:
 pip install -r requirements.txt
 ```
 
-There is currently no `pyproject.toml` or lock file.
+For a globally available command without manually activating a virtual
+environment, install the editable project with `pipx install --editable .`.
+The command is then `icebreaker` and works from any directory.
+
+Packaging is configured in `pyproject.toml`; `uv.lock` records the locked dependencies.
 
 ## Application flow
 
@@ -59,8 +68,9 @@ The entry point is `main.py`.
 4. An `AsyncOpenAI` client is created using the selected URL.
 5. A `ChatLogger` is created for the session.
 6. `MultilineInput` reads prompts from the terminal.
-7. `InputHandler` handles commands or starts an asynchronous streamed response.
-8. Completed, interrupted, failed, and lifecycle events are logged as JSONL records.
+7. `SkillsManager` discovers valid skills under `skills/`.
+8. `InputHandler` handles commands or starts an asynchronous streamed response.
+9. Completed, interrupted, failed, lifecycle, and skill events are logged as JSONL records.
 
 Run the application from the project directory with:
 
@@ -69,6 +79,12 @@ python main.py
 ```
 
 ## Main modules
+
+### `cli.py`
+
+`cli.py` is the installed command-line entry point. The `icebreaker` console
+script calls `cli.main()`, which starts the existing asynchronous `main.run()`
+loop. Running `python main.py` remains supported for local development.
 
 ### `main.py`
 
@@ -119,6 +135,10 @@ Supported commands:
 /history        Show current-session history
 /reset, /clear  Clear current in-memory history
 /id             Show the current session ID
+/skills         List available skills
+/skill          Show the active skill
+/skill <name>   Activate a skill
+/skill clear    Clear the active skill
 /exit, /quit    Exit the application
 ```
 
@@ -158,11 +178,26 @@ Interrupted requests:
 - Persist an interrupted record
 - Persist any collected reasoning as `reasoning_interrupted`
 
+`ICEBREAKER_SKILLS_DIR` can override the skills root when the command is
+installed globally. Otherwise, the project-local `skills/` directory is used.
+
+### `skills_manager.py`
+
+`SkillsManager` discovers immediate child directories under `skills/`, validates
+`SKILL.md` YAML front matter, and loads skill instructions. Each valid skill
+requires matching directory and metadata names plus non-empty `name`,
+`description`, and Markdown instructions. Invalid skills are skipped and
+reported through `/skills`.
+
+`Skill.resolve_resource()` safely resolves paths within a skill directory, but
+resources are not automatically loaded or executed.
+
 ### `logger.py`
 
 `ChatLogger` provides append-only JSON Lines persistence.
 
-By default, paths are rooted beside the source file:
+By default, paths are rooted beside the source file. `ICEBREAKER_LOG_DIR`
+can override the log root for global installations:
 
 ```text
 logs/chatlog/chatlog_YYYY-MM-DD.jsonl
@@ -178,6 +213,7 @@ Common metadata fields include:
 - `session_id` — unique session identifier
 - `model` — active model when applicable
 - `base_url` — selected backend URL when configured
+- `skill` — active skill name when applicable
 
 Possible chat record types include:
 
@@ -187,6 +223,8 @@ Possible chat record types include:
 - `model_changed`
 - `reset`
 - `exit`
+- `skill_activated`
+- `skill_cleared`
 
 Reasoning is logged separately and can be disabled using the `log_reasoning` constructor option.
 
@@ -245,16 +283,16 @@ logs/*
 - Do not rewrite complete log files; append one JSON object per line.
 - Do not add empty assistant messages for failed requests.
 - Keep model changes explicit in the log.
+- Keep skill instructions separate from user input when building requests.
+- Do not execute skill resources automatically.
 
 ## Known limitations and follow-up work
 
 1. Third-party packages must be installed before runtime validation.
-2. There are no automated tests yet.
-3. The current editor diagnostics cannot resolve `openai`, `rich`, or `prompt_toolkit` until the active Python environment includes them.
-4. The generation cancellation watcher is implemented specifically for Windows.
-5. The application does not restore previous conversations from JSONL logs.
-6. The complete conversation history is not sent to the model on later requests.
-7. The model name is accepted without backend validation.
-8. The OpenAI-compatible server must support the Responses API streaming interface used by the application.
-9. `config.py` still catches a broad `Exception` around the model request so backend-specific failures can be displayed; this can be narrowed after the supported backend error types are established.
-10. `README.md` remains minimal and should eventually document installation, controls, logging, and backend compatibility.
+2. The complete conversation history is not sent to the model on later requests.
+3. The model name is accepted without backend validation.
+4. The OpenAI-compatible server must support the Responses API streaming interface used by the application.
+5. `config.py` still catches a broad `Exception` around the model request so backend-specific failures can be displayed; this can be narrowed after the supported backend error types are established.
+6. The installed non-editable wheel does not bundle the project-local `skills/` directory; use `pipx install --editable .` or set `ICEBREAKER_SKILLS_DIR` for globally installed use.
+7. The project requires Python 3.14 or newer.
+8. Automatic skill selection is not implemented; skills are selected explicitly with `/skill <name>`.
