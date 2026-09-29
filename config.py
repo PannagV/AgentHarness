@@ -1,5 +1,4 @@
 from pyexpat.errors import messages
-from main import console, client, ThreeDots
 from rich.console import Console, Group
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -23,7 +22,9 @@ reasoning_trace = []
 
 class InputHandler():
     
-    def __init__(self):
+    def __init__(self, client, dots_renderer):
+        self.client = client
+        self.dots_renderer = dots_renderer
         self.commands = {
             "/help": self.help,
             "/h": self.help,
@@ -90,7 +91,7 @@ class InputHandler():
         else:
 
             answer = ""
-            status = ThreeDots()
+            status = self.dots_renderer()
             response_panel = Panel(Markdown(""), border_style="green")
 
             with Live(
@@ -99,7 +100,7 @@ class InputHandler():
                 refresh_per_second=10,
             ) as live:
                 try:
-                    stream = client.responses.create(
+                    stream = self.client.responses.create(
                         model=model_name,
                         input=user_input,
                         stream=True
