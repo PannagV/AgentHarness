@@ -1,0 +1,8 @@
+servers:
+  - name: searxng
+    enabled: true
+    transport: stdio
+    command: python
+    args:
+      - mcp/searxng.py
+

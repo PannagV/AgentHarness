@@ -1,4 +1,6 @@
 openai
+fastmcp[client]>=4.0.10
+httpx>=0.28.1
 rich
 prompt-toolkit
 pyyaml

@@ -2,6 +2,23 @@
 
 This file records the changes made during the current implementation session.
 
+## 2026-09-30 — Stream large responses incrementally
+
+- Replaced per-delta reconstruction of the full Markdown response with direct
+  console writes for each output delta.
+- Stop and clear the transient Rich loading display when the first text arrives,
+  avoiding full-screen redraws as the response grows.
+- Disable Rich markup parsing for model-generated deltas to preserve literal text.
+- Continue accumulating the complete response for conversation history and logs;
+  history still renders Markdown after generation.
+- Added regression tests for incremental delta display and empty responses.
+
+## 2026-09-30 — Support Python 3.13
+
+- Lowered the project minimum Python version from 3.14 to 3.13.
+- Updated `.python-version`, `pyproject.toml`, and `uv.lock` so `pipx`
+  installation works with Python 3.13.3.
+
 ## 2026-09-29 — Icebreaker rename, skills, and global CLI
 
 - Renamed the project distribution from `agentharness` to `icebreaker`.

@@ -61,6 +61,35 @@ the session JSONL log, but the full skill text is not logged. Invalid skill
 directories are skipped and reported by `/skills` rather than preventing the
 application from starting.
 
+## MCP tools
+
+MCP servers are configured in `mcp/servers.yaml`. The included SearXNG server
+runs as a local stdio process; set `SEARXNG_BASE_URL` to override its default
+`http://127.0.0.1:8080` endpoint. Install dependencies with
+`pip install -r requirements.txt` to include the FastMCP client.
+
+Servers may also be configured as external MCP endpoints. Stdio server example:
+
+```yaml
+servers:
+  - name: filesystem
+    transport: stdio
+    command: npx
+    args:
+      - -y
+      - "@modelcontextprotocol/server-filesystem"
+      - "C:/Users/example/Documents"
+```
+
+SSE endpoints can be configured with `transport: sse`, a `url`, and optional
+`headers`. Header and environment values may reference environment variables
+using `${VARIABLE_NAME}`. Do not put credentials directly in the YAML file.
+
+Use `/mcp` to inspect configured server status and `/mcp-tools` to list tools.
+Tool calls are made by the model when supported by the configured
+OpenAI-compatible backend. MCP tools can execute code or access external
+resources, so only configure servers you trust.
+
 ## Controls
 
 - Enter inserts a newline.

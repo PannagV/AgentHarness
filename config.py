@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import inspect
+import json
 import os
 import sys
 from pathlib import Path
@@ -13,10 +14,29 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 
 from logger import ChatLogger
+from mcp_manager import MCPManager
 from skills_manager import Skill, SkillsManager
 
 
 console = Console()
+
+
+class LiveResponseText:
+    """Switch from the live wait indicator to direct, incremental output."""
+
+    def __init__(self, live: Live) -> None:
+        self.live = live
+        self.has_output = False
+
+    def write_delta(self, delta: str) -> None:
+        if not self.has_output:
+            self.live.stop()
+            self.has_output = True
+        console.print(delta, end="", markup=False, highlight=False)
+
+    def finish(self) -> None:
+        if self.has_output:
+            console.print()
 
 
 class InputHandler:
@@ -27,6 +47,7 @@ class InputHandler:
         model_name: str,
         logger: ChatLogger,
         skills_manager: SkillsManager | None = None,
+        mcp_manager: MCPManager | None = None,
     ) -> None:
         self.client = client
         self.dots_renderer = dots_renderer
@@ -36,6 +57,7 @@ class InputHandler:
             Path(__file__).parent / "skills"
         )
         self.active_skill: Skill | None = None
+        self.mcp_manager = mcp_manager
         self.messages: list[dict[str, str]] = []
         self.reasoning_trace: list[str] = []
         self.commands = {
@@ -51,6 +73,8 @@ class InputHandler:
             "/id": self.show_conversation_id,
             "/skills": self.list_skills,
             "/list-skills": self.list_skills,
+            "/mcp": self.list_mcp_servers,
+            "/mcp-tools": self.list_mcp_tools,
         }
 
     def list_skills(self) -> None:
@@ -70,6 +94,27 @@ class InputHandler:
                 f"[yellow]{len(self.skills_manager.errors)} skill(s) skipped "
                 "because they are invalid.[/yellow]"
             )
+
+    def list_mcp_servers(self) -> None:
+        if self.mcp_manager is None:
+            console.print("[yellow]MCP is not configured.[/yellow]")
+            return
+        summaries = self.mcp_manager.server_summaries()
+        if not summaries:
+            console.print("[yellow]No MCP servers configured.[/yellow]")
+            return
+        console.print("[bold cyan]MCP servers[/bold cyan]")
+        for name, transport, state in summaries:
+            console.print(f"- [cyan]{name}[/cyan] ({transport}): {state}")
+
+    def list_mcp_tools(self) -> None:
+        tools = self.mcp_manager.tool_summaries() if self.mcp_manager else []
+        if not tools:
+            console.print("[yellow]No MCP tools available.[/yellow]")
+            return
+        console.print("[bold cyan]MCP tools[/bold cyan]")
+        for name, description in tools:
+            console.print(f"- [cyan]{name}[/cyan] — {description}")
 
     def select_skill(self, argument: str = "") -> None:
         argument = argument.strip()
@@ -167,6 +212,8 @@ Available commands:
 /reset, /clear  Clear the current conversation
 /id             Show the current conversation ID
 /skills         List available skills
+/mcp            List MCP servers and connection status
+/mcp-tools      List available MCP tools
 /skill          Show the active skill
 /skill <name>   Activate a skill
 /skill clear    Clear the active skill
@@ -181,7 +228,7 @@ Ctrl+Q           Cancel input or interrupt generation
 
     def exit_program(self) -> None:
         self.logger.log_event("exit")
-        console.log("Exiting...")
+        console.print("Exiting...")
         sys.exit(0)
 
     def reset_conversation(self) -> None:
@@ -220,60 +267,93 @@ Ctrl+Q           Cancel input or interrupt generation
         cancel_task = asyncio.create_task(self._watch_for_cancel(cancel_event))
         stream = None
         response_panel = Panel(Markdown(""), border_style="green")
+        input_items: list[Any] = [{"role": "user", "content": user_input}]
+        tool_rounds = 0
 
         try:
             with Live(
                 Group(self.dots_renderer(), response_panel),
                 console=console,
                 refresh_per_second=10,
+                transient=True,
             ) as live:
-                try:
+                display = LiveResponseText(live)
+                while True:
                     request: dict[str, Any] = {
                         "model": self.model_name,
-                        "input": user_input,
+                        "input": input_items,
                         "stream": True,
                     }
                     if self.active_skill is not None:
                         request["instructions"] = self.skills_manager.format_instructions(
                             self.active_skill
                         )
-                    stream = await self.client.responses.create(**request)
-                except Exception as error:
-                    self.logger.log_error(user_input, str(error), self.model_name)
-                    live.update(
-                        Panel(
-                            f"[bold red]Request failed:[/bold red] {error}",
-                            border_style="red",
-                        )
-                    )
-                    return "", [], "failed"
+                    if self.mcp_manager is not None:
+                        tools = self.mcp_manager.responses_tools()
+                        if tools:
+                            request["tools"] = tools
 
-                async for event in stream:
+                    try:
+                        stream = await self.client.responses.create(**request)
+                    except Exception as error:
+                        self.logger.log_error(user_input, str(error), self.model_name)
+                        display.finish()
+                        if live.is_started:
+                            live.stop()
+                        console.print(Panel(f"[bold red]Request failed:[/bold red] {error}", border_style="red"))
+                        return "", [], "failed"
+
+                    completed_response = None
+                    async for event in stream:
+                        if cancel_event.is_set():
+                            status = "interrupted"
+                            break
+                        if event.type == "response.reasoning_text.delta":
+                            reasoning.append(event.delta)
+                        elif event.type == "response.output_text.delta":
+                            answer += event.delta
+                            display.write_delta(event.delta)
+                        elif event.type == "response.completed":
+                            completed_response = event.response
+
                     if cancel_event.is_set():
                         status = "interrupted"
+                        if not display.has_output:
+                            live.stop()
+                            console.print(Panel(Markdown(answer or "[No output received]"), title="Generation interrupted", border_style="yellow"))
+                        break
+                    if completed_response is None:
                         break
 
-                    if event.type == "response.reasoning_text.delta":
-                        reasoning.append(event.delta)
-                    elif event.type == "response.output_text.delta":
-                        answer += event.delta
-                        response_panel = Panel(
-                            Markdown(answer),
-                            border_style="yellow" if status == "interrupted" else "green",
-                        )
-                        live.update(Group(self.dots_renderer(), response_panel))
+                    output_items = completed_response.output
+                    calls = [item for item in output_items if getattr(item, "type", None) == "function_call"]
+                    if not calls:
+                        break
+                    if self.mcp_manager is None:
+                        break
+                    tool_rounds += 1
+                    if tool_rounds > 8:
+                        answer += "\n\n[Stopped: maximum MCP tool-call rounds reached.]"
+                        break
 
-                if cancel_event.is_set():
-                    status = "interrupted"
-                    live.update(
-                        Panel(
-                            Markdown(answer or "[No output received]"),
-                            title="Generation interrupted",
-                            border_style="yellow",
-                        )
-                    )
-                else:
-                    live.update(response_panel)
+                    input_items.extend(item.model_dump(exclude_none=True) for item in output_items)
+                    for call in calls:
+                        try:
+                            arguments = json.loads(call.arguments or "{}")
+                            if not isinstance(arguments, dict):
+                                raise ValueError("Tool arguments must be a JSON object")
+                            result = await asyncio.wait_for(
+                                self.mcp_manager.call_tool(call.name, arguments), timeout=60
+                            )
+                        except Exception as error:
+                            result = f"MCP tool error: {error}"
+                        input_items.append({
+                            "type": "function_call_output",
+                            "call_id": call.call_id,
+                            "output": result,
+                        })
+
+                display.finish()
         except asyncio.CancelledError:
             status = "interrupted"
         finally:

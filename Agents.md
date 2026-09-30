@@ -136,6 +136,8 @@ Supported commands:
 /reset, /clear  Clear current in-memory history
 /id             Show the current session ID
 /skills         List available skills
+/mcp            List MCP servers and connection status
+/mcp-tools      List available MCP tools
 /skill          Show the active skill
 /skill <name>   Activate a skill
 /skill clear    Clear the active skill
@@ -157,6 +159,18 @@ History is session-local. The application does not currently load prior sessions
 #### Response streaming
 
 Responses are requested with the active model and streamed asynchronously. Reasoning deltas and output deltas are collected separately.
+
+While waiting for the first output delta, a transient Rich `Live` display shows the generation indicator. On the first text delta, that display is stopped and removed; text deltas are then written directly to the console with Rich markup parsing disabled. This avoids reparsing and redrawing the complete accumulated response for every token, which caused rendering cost to grow with large outputs. The full response is still accumulated independently for history and logging. The displayed stream is plain text; completed history remains Markdown-rendered. A final newline is emitted after streaming, including after interruption or a later request failure.
+
+When changing this flow, preserve the following invariants:
+
+- Keep the Responses API request streamed (`stream=True`).
+- Do not rebuild a Markdown renderable from the entire response on each delta.
+- Stop the live indicator before writing streamed text to avoid competing terminal control.
+- Disable Rich markup interpretation for model-generated text.
+- Continue collecting every delta into the full response used by history and logs.
+- Ensure the final delta and output newline are preserved on completion, interruption, and errors.
+- Leave MCP function-call output handling and reasoning-delta collection intact.
 
 Successful requests:
 
@@ -294,5 +308,5 @@ logs/*
 4. The OpenAI-compatible server must support the Responses API streaming interface used by the application.
 5. `config.py` still catches a broad `Exception` around the model request so backend-specific failures can be displayed; this can be narrowed after the supported backend error types are established.
 6. The installed non-editable wheel does not bundle the project-local `skills/` directory; use `pipx install --editable .` or set `ICEBREAKER_SKILLS_DIR` for globally installed use.
-7. The project requires Python 3.14 or newer.
+7. The project requires Python 3.13 or newer.
 8. Automatic skill selection is not implemented; skills are selected explicitly with `/skill <name>`.

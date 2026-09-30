@@ -7,8 +7,10 @@ name = "icebreaker"
 version = "0.1.0"
 description = "A terminal harness for local OpenAI-compatible models"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.13"
 dependencies = [
+    "fastmcp[client]>=4.0.10",
+    "httpx>=0.28.1",
     "openai>=3.20.0",
     "prompt-toolkit>=3.0.53",
     "pyyaml>=6.0",
@@ -26,4 +28,5 @@ py-modules = [
     "input_ui",
     "logger",
     "skills_manager",
+    "mcp_manager",
 ]

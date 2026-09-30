@@ -45,6 +45,7 @@ async def run() -> None:
     from config import InputHandler
     from input_ui import MultilineInput
     from logger import ChatLogger
+    from mcp_manager import MCPManager
     from skills_manager import SkillsManager
 
     model_name = console.input(
@@ -63,29 +64,40 @@ async def run() -> None:
         os.environ.get("ICEBREAKER_SKILLS_DIR", Path(__file__).parent / "skills")
     ).expanduser()
     skills_manager = SkillsManager(skills_directory)
+    mcp_manager = MCPManager(Path(__file__).parent)
+    await mcp_manager.connect_all()
+    for name, transport, state in mcp_manager.server_summaries():
+        if state == "connected":
+            console.print(f"[green]MCP server connected:[/green] {name} ({transport})")
+        else:
+            console.print(f"[yellow]MCP server unavailable:[/yellow] {name}: {state}")
+
     input_session = MultilineInput()
     input_handler = InputHandler(
-        client, ThreeDots, model_name, logger, skills_manager
+        client, ThreeDots, model_name, logger, skills_manager, mcp_manager
     )
 
     show_welcome(model_name)
 
-    while True:
-        try:
-            result = await input_session.prompt()
-        except (EOFError, KeyboardInterrupt):
-            input_handler.exit_program()
-            return
+    try:
+        while True:
+            try:
+                result = await input_session.prompt()
+            except (EOFError, KeyboardInterrupt):
+                input_handler.exit_program()
+                return
 
-        if result.exited:
-            input_handler.exit_program()
-        if result.cancelled:
-            console.print("[yellow]Input cancelled.[/yellow]")
-            continue
-        if not result.text.strip():
-            continue
+            if result.exited:
+                input_handler.exit_program()
+            if result.cancelled:
+                console.print("[yellow]Input cancelled.[/yellow]")
+                continue
+            if not result.text.strip():
+                continue
 
-        await input_handler.handle_input(result.text)
+            await input_handler.handle_input(result.text)
+    finally:
+        await mcp_manager.disconnect_all()
 
 
 if __name__ == "__main__":
