@@ -10,6 +10,7 @@ from rich.text import Text
 
 DEFAULT_BASE_URL = "http://localhost:1234/v1"
 DEFAULT_MODEL_NAME = "nvidia/nemotron-3-nano-4b"
+DEFAULT_API_KEY = "lm-studio"
 
 console = Console(color_system="auto")
 
@@ -54,10 +55,13 @@ async def run() -> None:
     base_url = console.input(
         f"[bold] Enter Base URL [{DEFAULT_BASE_URL}]: "
     ).strip() or DEFAULT_BASE_URL
+    apiKey = console.input(
+        f"[bold] Enter API key [{DEFAULT_API_KEY}]: "
+    ).strip() or DEFAULT_API_KEY
 
     client = AsyncOpenAI(
         base_url=base_url,
-        api_key="lm-studio",
+        api_key=apiKey,
     )
     logger = ChatLogger(model_name=model_name, base_url=base_url)
     skills_directory = Path(
