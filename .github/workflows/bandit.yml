@@ -1,0 +1,26 @@
+name: Bandit Security Scan
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  bandit:
+    name: Run Bandit
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+    steps:
+      - name: Run Bandit analysis
+        uses: PyCQA/bandit-action@v1
+        with:
+          targets: .
+          severity: all
+          confidence: all
